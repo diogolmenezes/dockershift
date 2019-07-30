@@ -1,5 +1,5 @@
 {
-  "name": "openshift-compose",
+  "name": "dockershift",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -15,6 +15,6 @@
     "yamljs": "^0.3.0"
   },
   "bin": {
-    "openshift-compose": "./index.js"
+    "dockershift": "./index.js"
   }
 }
