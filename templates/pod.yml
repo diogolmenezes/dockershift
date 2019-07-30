@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: 'sample'
+  name: 'sample'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: 'sample'
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: 'sample'
+    spec:
+      containers:
+        - env:
+            - name: NODE_ENV
+              value: 'staging'
+          image: >-
+            image
+          imagePullPolicy: IfNotPresent
+          name: 'sample'
+          ports:
+            - containerPort: port
+              protocol: TCP

@@ -1,0 +1,20 @@
+{
+  "name": "openshift-compose",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chalk": "^2.4.2",
+    "commander": "^2.20.0",
+    "execa": "^2.0.3",
+    "yamljs": "^0.3.0"
+  },
+  "bin": {
+    "openshift-compose": "./index.js"
+  }
+}
