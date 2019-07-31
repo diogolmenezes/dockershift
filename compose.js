@@ -154,6 +154,7 @@ function createService(service, compose) {
         template.spec.ports = compose.services[service].ports.map(item => {
             const ports = item.toString().split(':');
             return {
+                name: 'http',
                 protocol: 'TCP',
                 port: parseInt(ports[1]),
                 targetPort: parseInt(ports[0])
