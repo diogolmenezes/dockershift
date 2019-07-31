@@ -2,6 +2,8 @@ kind: Service
 apiVersion: v1
 metadata:
   name: sample-service
+  labels:
+    search: sample
 spec:
   selector:
     app: sample
