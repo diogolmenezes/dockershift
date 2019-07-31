@@ -4,6 +4,23 @@ const packageJson = require('./package.json');
 const chalk = require('chalk');
 const fs = require('fs');
 const execa = require('execa');
+const qoa = require('qoa');
+const ora = require('ora');
+const find = require('find');
+const spinner = ora();
+
+const ps = [
+    {
+        type: 'input',
+        query: `${chalk.green('Type your username:')}`,
+        handle: 'username'
+    },
+    {
+        type: 'secure',
+        query: `${chalk.green('Type your password:')}`,
+        handle: 'password'
+    }
+];
 
 init();
 
@@ -19,34 +36,49 @@ async function init() {
         })
         .option('--prefix <prefix>', 'project prefix')
         .option('--project <project>', 'project name')
-        .option('--down <openshift-project-name>', 'remove the project from openshift')
-        .option('--up', '')
+        .option('--down', 'remove the project from openshift')
+        .action(name => {
+            dockerComposePath = name;
+        })
+        .option('--up')
+        .option('--all', 'Use when you want to terminate all services all at once')
         .allowUnknownOption()
         .parse(process.argv);
 
-    if (program.down) {
-        await down();
-        process.exit(1);
-    }
+    await checkOcLogin();
 
     if (typeof dockerComposePath === 'undefined') {
-        console.error(chalk.red('Please specify the docker compose path'));
-        console.log(
-            `  ${chalk.cyan(program.name())} ${chalk.green('<dockerComposePath>')}`
-        );
-        console.log();
-        console.log(
-            `Run ${chalk.cyan(`${program.name()} --help`)} to see all options.`
-        );
-        process.exit(1);
-    }
+        const interactive = {
+            type: 'interactive',
+            query: chalk.green('Choose a docker compose file:'),
+            handle: 'file',
+            symbol: chalk.green('>'),
+            menu: []
+        };
 
-    createComposeFiles(dockerComposePath);
+        await find.file(/\W*(docker\-compose)\W*/, __dirname, async (files) => {
+            interactive.menu = files;
+            const compose = await qoa.prompt([interactive]);
+
+            if (program.down) {
+                await down(compose.file);
+                process.exit(1);
+            }
+            
+            createComposeFiles(compose.file);
+        });
+    } else {
+        if (program.down) {
+            await down(dockerComposePath);
+            process.exit(1);
+        }
+        
+        createComposeFiles(dockerComposePath);
+    }
 }
 
 async function createComposeFiles(dockerComposePath) {
     const compose = yamljs.load(dockerComposePath);
-
     const promises = [];
 
     Object.keys(compose.services).map((service, index) => {
@@ -59,7 +91,8 @@ async function createComposeFiles(dockerComposePath) {
     });
 
     Promise.all(promises).then(async () => {
-        await execute('oc', ['get', 'routes'], true);
+        const routes = await execute('oc', ['get', 'routes'], true);
+        //console.log(yamljs.parse(routes.replace(new RegExp('\t', 'g'), ' '))['Requested Host'].split('\n')[0]);
     });
 }
 
@@ -68,8 +101,10 @@ function createPod(service, compose) {
     const name = `${program.prefix.toLowerCase()}-${service}`;
     podTemplate.metadata.name = name;
     podTemplate.metadata.labels.app = name;
+    podTemplate.metadata.labels.search = name;
     podTemplate.spec.selector.matchLabels.app = name;
     podTemplate.spec.template.metadata.labels.app = name;
+    podTemplate.spec.template.metadata.labels.search = name;
     podTemplate.spec.template.spec.containers[0].name = name
     podTemplate.spec.template.spec.containers[0].image = compose.services[service].image
 
@@ -87,9 +122,11 @@ function createPod(service, compose) {
 
     if (compose.services[service].ports) {
         podTemplate.spec.template.spec.containers[0].ports = compose.services[service].ports.map(item => {
-            const ports = item.split(':');
+            let ports = item.toString();
+            if (ports.search(':') != -1) ports = ports.split(':')[1];
+
             return {
-                containerPort: parseInt(ports[1]),
+                containerPort: parseInt(ports),
                 protocol: 'TCP'
             }
         });
@@ -110,11 +147,12 @@ function createService(service, compose) {
     const name = `${program.prefix.toLowerCase()}-${service}`;
 
     template.metadata.name = `${name}-service`;
+    template.metadata.labels.search = name;
     template.spec.selector.app = name;
 
     if (compose.services[service].ports) {
         template.spec.ports = compose.services[service].ports.map(item => {
-            const ports = item.split(':');
+            const ports = item.toString().split(':');
             return {
                 protocol: 'TCP',
                 port: parseInt(ports[1]),
@@ -141,25 +179,55 @@ async function checkOcLogin() {
         await execa('oc', ['status']);
     }
     catch {
-        console.log('You must login at Openshift in cli before continue. (oc login url -u user -p pass)')
-        process.exit(1);
+        console.log(chalk.red('You are not logged into openshift, please enter credentials below:'));
+        const props = await qoa.prompt(ps);
+        await execute('oc', ['login', 'okdhmgmaster.rededor.corp:8443', `-u ${props.username}`, `-p ${props.password}`]);
     }
 }
 
-async function down() {
-    await checkOcLogin();
-    await execute('oc', ['project', program.down]);
-    await execute('oc', ['delete', 'all', '--all']);
+async function down(dockerComposePath) {
+    const compose = yamljs.load(dockerComposePath);
+    const services = Object.keys(compose.services);
+
+    const interactive = {
+        type: 'interactive',
+        query: chalk.green('Choose a service to terminate:'),
+        handle: 'service',
+        symbol: chalk.green('>'),
+        menu: services
+    };
+
+    if (!program.prefix) {
+        console.log(chalk.red('Prefix flag is required.'))
+        program.exit(1);
+    }
+
+    await execute('oc', ['project', program.project]);
+    if (program.all) {
+        startSpinner(`Deleting ${chalk.magenta('all')} services`);
+        const deletePromises = services.map(async (svc) => {
+            return execute('oc', ['delete', 'all', '-l', `search=${program.prefix}-${svc}`]);
+        });
+        await Promise.all(deletePromises);
+    } else {
+        const servicesList = await qoa.prompt([interactive]);
+        startSpinner('Deleting project');
+        await execute('oc', ['delete', 'all', '-l', `search=${program.prefix}-${servicesList.service}`]);
+    }
+    spinner.succeed();
 }
 
 async function up(service, podFile, serviceFile) {
     const name = `${program.prefix.toLowerCase()}-${service}`;
-    await checkOcLogin();
     await execute('oc', ['project', program.project]);
+    startSpinner(`Creating ${chalk.yellow(service)} pods`);
     await execute('oc', ['create', '-f', podFile]);
+    spinner.succeed();
 
     if (serviceFile) {
+        startSpinner(`Creating ${chalk.yellow(service)} services`);
         await execute('oc', ['create', '-f', serviceFile]);
+        spinner.succeed();
         await execute('oc', ['expose', `svc/${name}-service`, `--name=${name}-route`]);
     }
 }
@@ -171,9 +239,17 @@ async function execute(command, args, output = false) {
         if (output) {
             console.log(stdout);
         }
+
+        return stdout;
     }
     catch (exception) {
-        console.log('ERROR:', exception.message);
+        if (spinner.isSpinning) spinner.fail();
+        console.log('\nERROR:', exception.message);
         process.exit(1);
     }
+}
+
+function startSpinner(text) {
+    spinner.text = text;
+    spinner.start();
 }

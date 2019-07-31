@@ -1,0 +1,26 @@
+version: '2'
+services:
+  app:
+    restart: always
+    image: image
+    ports:
+      - '8080:8081'
+    environment:
+      - NODE_ENV=staging
+    mem_limit: 512m
+  lb:
+    restart: always
+    image: haproxy
+    ports:
+      - '8091:80'
+    links:
+      - app
+    environment:
+      - MAXCONN=20000
+    mem_limit: 128m
+  filebeat:
+    restart: always
+    image: image
+    volumes_from:
+      - app
+    mem_limit: 256m

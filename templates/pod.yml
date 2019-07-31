@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   labels:
     app: 'sample'
+    search: 'sample'
   name: 'sample'
 spec:
   replicas: 1
@@ -14,6 +15,7 @@ spec:
       creationTimestamp: null
       labels:
         app: 'sample'
+        search: 'sample'
     spec:
       containers:
         - env:
